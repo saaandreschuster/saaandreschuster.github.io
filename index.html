@@ -2372,6 +2372,340 @@ function bankFileVersion(bank, data){
   return v || null;
 }
 
+/* ================= SICOOB (756) — Manual de Importação CNAB 240 v2.11 (12/2024) ================= */
+const D_SICOOB = {
+  inscr:{'0':'Isento / Não informado','1':'CPF','2':'CGC/CNPJ','3':'PIS/PASEP','9':'Outros'},
+  remret:{'1':'Remessa (Cliente → Banco)','2':'Retorno (Banco → Cliente)'},
+  oper:{'C':'Lançamento a Crédito','D':'Lançamento a Débito','E':'Extrato p/ Conciliação','G':'Extrato p/ Gestão de Caixa','I':'Títulos Capturados do Próprio Banco','R':'Arquivo Remessa','T':'Arquivo Retorno'},
+  // G025 — Tipo de Serviço (os efetivamente usados na importação Sicoob)
+  tiposvc:{'01':'Cobrança','20':'Pagamento Fornecedor','22':'Pagamento de Contas, Tributos e Impostos','30':'Pagamento Salários','98':'Pagamentos Diversos'},
+  // G029 — Forma de Lançamento
+  forma:{'01':'Crédito em Conta-Corrente','05':'Crédito em Conta Poupança','11':'Pagamento de Contas/Tributos com Código de Barras','16':'Tributo DARF Normal','17':'Tributo GPS (Previdência)','18':'Tributo DARF Simples','30':'Liquidação de Títulos do Próprio Banco','31':'Pagamento de Títulos de Outros Bancos','41':'TED – Outra Titularidade','43':'TED – Mesma Titularidade','45':'PIX – Transferência','47':'PIX – QR Code'},
+  // G060 — Tipo de Movimento
+  mov:{'0':'Inclusão','3':'Estorno (somente retorno)'},
+  // G061 — Código da Instrução para Movimento
+  instr:{'00':'Inclusão de Registro Detalhe Liberado','33':'Estorno por Devolução da Câmara Centralizadora'},
+  // P001 — Código da Câmara Centralizadora
+  camara:{'018':'TED (STR/CIP)','009':'PIX (SPI)'},
+  // P014 — Indicativo da Forma de Pagamento
+  indpag:{'01':'Débito em Conta Corrente','02':'Débito Empréstimo/Financiamento','03':'Débito Cartão de Crédito'},
+  // P006 — Aviso ao Favorecido
+  aviso:{'0':'Não emite aviso','2':'Aviso somente ao remetente','5':'Aviso somente ao favorecido','6':'Aviso ao remetente e favorecido','7':'Aviso ao favorecido e 2 vias ao remetente'},
+  // G065 — Código da Moeda (no Título)
+  moedaN:{'09':'Real'},
+  // G100 — Forma de Iniciação (PIX)
+  inicpix:{'01':'Chave PIX – Telefone','02':'Chave PIX – E-mail','03':'Chave PIX – CPF/CNPJ','04':'Chave Aleatória','05':'Dados Bancários'},
+  // N003 — Tipo de Identificação do Contribuinte
+  tribContrib:{'1':'CNPJ','2':'CPF','3':'NIT/PIS/PASEP','4':'CEI','6':'NB','7':'Nº do Título','8':'DEBCAD','9':'Referência'},
+  // N024 — Tipo de Informação (Segmento W)
+  tipoInfoW:{'1':'Uso da empresa','2':'Emissão na guia do tributo','9':'Informação Complementar de Tributo'},
+  // N027 — Identificador de Tributo (Segmento W)
+  identTrib:{'01':'FGTS'},
+  // G059 — Código das Ocorrências para Retorno/Remessa (pos 231-240, até 5 códigos de 2 dígitos)
+  ocorr:{
+    '00':'Crédito ou débito efetivado — pagamento confirmado',
+    '01':'Conta Corrente da Empresa com Saldo Insuficiente',
+    '02':'Débito cancelado pelo pagador',
+    'AJ':'Rejeição CNAB — registro/lote com estrutura rejeitada (obrigatoriedade, domínio ou tipo de dado)',
+    'AN':'Tipo de conta do favorecido inválido',
+    'AP':'Data de lançamento inválida',
+    'BD':'Inclusão efetuada com sucesso — pagamento agendado',
+    'BF':'Transação rejeitada por assinatura de pendência',
+    'HF':'Conta Corrente da Empresa com Saldo Insuficiente, em tentativa de reprocessamento',
+    'PA':'PIX não efetivado — registro rejeitado negocialmente',
+    'PC':'Conta transacional inválida/inexistente/encerrada/bloqueada no PSP do recebedor',
+    'PD':'Transação pendente de assinatura',
+    'PE':'Tipo de transação não suportado/autorizado na conta transacional',
+    'PG':'CPF/CNPJ do usuário recebedor incorreto',
+    'PH':'Ordem rejeitada pelo PSP do recebedor',
+    'PI':'ISPB pagador/recebedor inválido',
+    'PJ':'Chave não cadastrada no DICT',
+    'PK':'QR Code inválido/vencido',
+    'ZJ':'Limite de pagamentos parciais excedido'
+  }
+};
+
+const LAYOUTS_SICOOB = {
+  '0':{title:'Header de Arquivo',badge:'t0',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Uso FEBRABAN/CNAB',9,17,'X(009)',{filler:1}),F('Tipo de Inscrição da Empresa',18,18,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição (CPF/CNPJ)',19,32,'9(014)',{doc:1}),F('Código do Convênio',33,52,'X(020)'),
+    F('Agência Mantenedora',53,57,'9(005)'),F('DV Agência',58,58,'X(001)'),F('Número da Conta Corrente',59,70,'9(012)'),
+    F('DV Conta',71,71,'9(001)'),F('DV Agência/Conta',72,72,'X(001)'),F('Nome da Empresa',73,102,'X(030)'),
+    F('Nome do Banco',103,132,'X(030)'),F('Uso FEBRABAN/CNAB',133,142,'X(010)',{filler:1}),
+    F('Código Remessa/Retorno',143,143,'9(001)',{d:'remret'}),F('Data de Geração',144,151,'9(008)',{date:1}),
+    F('Hora de Geração',152,157,'9(006)',{time:1}),F('Nº Sequencial do Arquivo',158,163,'9(006)'),
+    F('Versão do Layout do Arquivo',164,166,'9(003)'),F('Densidade de Gravação',167,171,'9(005)'),
+    F('Uso Reservado do Banco',172,191,'X(020)',{filler:1}),F('Uso Reservado da Empresa',192,211,'X(020)',{filler:1}),
+    F('Uso FEBRABAN/CNAB',212,240,'X(029)',{filler:1})]},
+
+  '9':{title:'Trailer de Arquivo',badge:'t9',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Uso FEBRABAN/CNAB',9,17,'X(009)',{filler:1}),F('Quantidade de Lotes do Arquivo',18,23,'9(006)'),
+    F('Quantidade de Registros do Arquivo',24,29,'9(006)'),F('Qtde de Contas p/ Concil. (Lotes)',30,35,'9(006)'),
+    F('Uso FEBRABAN/CNAB',36,240,'X(205)',{filler:1})]},
+
+  '1':{title:'Header de Lote — Transferência/TED/PIX · Tributos · Folha',badge:'t1',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Tipo da Operação',9,9,'X(001)',{d:'oper'}),F('Tipo do Serviço',10,11,'9(002)',{d:'tiposvc'}),
+    F('Forma de Lançamento',12,13,'9(002)',{d:'forma'}),F('Nº da Versão do Layout do Lote',14,16,'9(003)'),
+    F('Uso FEBRABAN/CNAB',17,17,'X(001)',{filler:1}),F('Tipo de Inscrição da Empresa',18,18,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição (CPF/CNPJ)',19,32,'9(014)',{doc:1}),F('Código do Convênio no Banco',33,52,'X(020)'),
+    F('Agência Mantenedora',53,57,'9(005)'),F('DV Agência',58,58,'X(001)'),F('Número da Conta Corrente',59,70,'9(012)'),
+    F('DV Conta',71,71,'9(001)'),F('DV Agência/Conta',72,72,'X(001)'),F('Nome da Empresa',73,102,'X(030)'),
+    F('Informação 1 – Mensagem',103,142,'X(040)'),F('Logradouro',143,172,'X(030)'),F('Número',173,177,'9(005)'),
+    F('Complemento',178,192,'X(015)'),F('Cidade',193,212,'X(020)'),F('CEP',213,217,'9(005)'),
+    F('Complemento do CEP',218,220,'X(003)'),F('Estado (UF)',221,222,'X(002)'),
+    F('Indicativo da Forma de Pagamento',223,224,'9(002)',{d:'indpag'}),F('Uso FEBRABAN/CNAB',225,230,'X(006)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  '1J':{title:'Header de Lote — Pagamento de Títulos de Cobrança',badge:'t1',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Tipo da Operação',9,9,'X(001)',{d:'oper'}),F('Tipo do Serviço',10,11,'9(002)',{d:'tiposvc'}),
+    F('Forma de Lançamento',12,13,'9(002)',{d:'forma'}),F('Nº da Versão do Layout do Lote',14,16,'9(003)'),
+    F('Uso FEBRABAN/CNAB',17,17,'X(001)',{filler:1}),F('Tipo de Inscrição da Empresa',18,18,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição (CPF/CNPJ)',19,32,'9(014)',{doc:1}),F('Código do Convênio no Banco',33,52,'X(020)'),
+    F('Agência Mantenedora',53,57,'9(005)'),F('DV Agência',58,58,'X(001)'),F('Número da Conta Corrente',59,70,'9(012)'),
+    F('DV Conta',71,71,'9(001)'),F('DV Agência/Conta',72,72,'X(001)'),F('Nome da Empresa',73,102,'X(030)'),
+    F('Informação 1 – Mensagem',103,142,'X(040)'),F('Logradouro',143,172,'X(030)'),F('Número',173,177,'9(005)'),
+    F('Complemento',178,192,'X(015)'),F('Cidade',193,212,'X(020)'),F('CEP',213,217,'9(005)'),
+    F('Complemento do CEP',218,220,'X(003)'),F('Estado (UF)',221,222,'X(002)'),
+    F('Uso FEBRABAN/CNAB',223,230,'X(008)',{filler:1}),F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  '5':{title:'Trailer de Lote — Transferência/Cobrança/Folha',badge:'t5',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Uso FEBRABAN/CNAB',9,17,'X(009)',{filler:1}),F('Quantidade de Registros do Lote',18,23,'9(006)'),
+    F('Somatória dos Valores',24,41,'9(016)V2',{dec:1}),F('Somatória de Quantidade de Moedas',42,59,'9(013)V5'),
+    F('Número do Aviso de Débito',60,65,'9(006)'),F('Uso FEBRABAN/CNAB',66,230,'X(165)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  '5O':{title:'Trailer de Lote — Convênios/Tributos',badge:'t5',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Uso FEBRABAN/CNAB',9,17,'X(009)',{filler:1}),F('Quantidade de Registros do Lote',18,23,'9(006)'),
+    F('Somatória dos Valores',24,41,'9(016)V2',{dec:1}),F('Complemento de Registro',42,230,'X(189)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'A':{title:'Segmento A — Transferência/TED/PIX · Folha',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Código da Câmara Centralizadora',18,20,'9(003)',{d:'camara'}),F('Código do Banco do Favorecido',21,23,'9(003)'),
+    F('Agência do Favorecido',24,28,'9(005)'),F('DV Agência',29,29,'X(001)'),F('Conta Corrente do Favorecido',30,41,'9(012)'),
+    F('DV Conta',42,42,'9(001)'),F('DV Agência/Conta',43,43,'X(001)'),F('Nome do Favorecido',44,73,'X(030)'),
+    F('Seu Número (Doc. Empresa)',74,93,'X(020)'),F('Data do Pagamento',94,101,'9(008)',{date:1}),
+    F('Tipo da Moeda',102,104,'X(003)'),F('Quantidade da Moeda',105,119,'9(010)V5'),
+    F('Valor do Pagamento',120,134,'9(013)V2',{dec:1}),F('Nosso Número (Doc. Banco)',135,154,'X(020)'),
+    F('Data Real da Efetivação',155,162,'9(008)',{date:1}),F('Valor Real da Efetivação',163,177,'9(013)V2',{dec:1}),
+    F('Informação 2 – Outras Informações',178,217,'X(040)'),F('Uso FEBRABAN/CNAB',218,219,'X(002)',{filler:1}),
+    F('Código Finalidade da TED',220,224,'X(005)'),F('Código Finalidade Complementar',225,226,'X(002)'),
+    F('Uso FEBRABAN/CNAB',227,229,'X(003)',{filler:1}),F('Aviso ao Favorecido',230,230,'9(001)',{d:'aviso'}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'B':{title:'Segmento B — Favorecido (Transferência/PIX)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Forma de Iniciação (PIX)',15,17,'X(003)',{d:'inicpix'}),F('Tipo de Inscrição do Favorecido',18,18,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição do Favorecido',19,32,'9(014)',{doc:1}),F('Dados Complementares – Informação 10',33,67,'X(035)'),
+    F('Dados Complementares – Informação 11',68,127,'X(060)'),F('Dados Complementares – Informação 12',128,226,'X(099)'),
+    F('Código UG Centralizadora (SIAPE)',227,232,'9(006)'),F('Uso FEBRABAN/CNAB',233,240,'X(008)',{filler:1})]},
+
+  'BF':{title:'Segmento B — Favorecido (Folha de Pagamento)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso FEBRABAN/CNAB',15,17,'X(003)',{filler:1}),F('Tipo de Inscrição do Favorecido',18,18,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição do Favorecido',19,32,'9(014)',{doc:1}),F('Logradouro',33,62,'X(030)'),F('Número',63,67,'9(005)'),
+    F('Complemento',68,82,'X(015)'),F('Bairro',83,97,'X(015)'),F('Cidade',98,117,'X(020)'),F('CEP',118,122,'9(005)'),
+    F('Complemento do CEP',123,125,'X(003)'),F('Estado (UF)',126,127,'X(002)'),F('Data do Vencimento',128,135,'9(008)',{date:1}),
+    F('Valor do Documento',136,150,'9(013)V2',{dec:1}),F('Valor do Abatimento',151,165,'9(013)V2',{dec:1}),
+    F('Valor do Desconto',166,180,'9(013)V2',{dec:1}),F('Valor da Mora',181,195,'9(013)V2',{dec:1}),
+    F('Valor da Multa',196,210,'9(013)V2',{dec:1}),F('Código/Documento do Favorecido',211,225,'X(015)'),
+    F('Aviso ao Favorecido',226,226,'9(001)',{d:'aviso'}),F('Código UG Centralizadora (SIAPE)',227,232,'X(006)'),
+    F('Uso FEBRABAN/CNAB',233,240,'X(008)',{filler:1})]},
+
+  'J':{title:'Segmento J — Pagamento de Título de Cobrança',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Código de Barras',18,61,'9(044)',{barcode:1}),F('Nome do Cedente',62,91,'X(030)'),
+    F('Data do Vencimento (Nominal)',92,99,'9(008)',{date:1}),F('Valor do Título (Nominal)',100,114,'9(013)V2',{dec:1}),
+    F('Valor Desconto + Abatimento',115,129,'9(013)V2',{dec:1}),F('Valor Mora + Multa',130,144,'9(013)V2',{dec:1}),
+    F('Data do Pagamento',145,152,'9(008)',{date:1}),F('Valor do Pagamento',153,167,'9(013)V2',{dec:1}),
+    F('Quantidade da Moeda',168,182,'9(010)V5'),F('Referência do Sacado (Seu Número)',183,202,'X(020)'),
+    F('Nosso Número (Doc. Banco)',203,222,'X(020)'),F('Código de Moeda',223,224,'9(002)',{d:'moedaN'}),
+    F('Uso FEBRABAN/CNAB',225,230,'X(006)',{filler:1}),F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'J52':{title:'Segmento J-52 — Sacado/Cedente/Sacador',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Remessa',16,17,'9(002)'),
+    F('Identificação Registro Opcional',18,19,'9(002)'),
+    F('Tipo de Inscrição (Sacado)',20,20,'9(001)',{d:'inscr'}),F('Nº de Inscrição (Sacado)',21,35,'9(015)',{doc:1}),
+    F('Nome (Sacado)',36,75,'X(040)'),F('Tipo de Inscrição (Cedente)',76,76,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição (Cedente)',77,91,'9(015)',{doc:1}),F('Nome (Cedente)',92,131,'X(040)'),
+    F('Tipo de Inscrição (Sacador)',132,132,'9(001)',{d:'inscr'}),F('Nº de Inscrição (Sacador)',133,147,'9(015)',{doc:1}),
+    F('Nome (Sacador)',148,187,'X(040)'),F('Uso FEBRABAN/CNAB',188,240,'X(053)',{filler:1})]},
+
+  'J52PIX':{title:'Segmento J-52 PIX — Chave/QR Code',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Remessa',16,17,'9(002)'),
+    F('Identificação Registro Opcional',18,19,'9(002)'),
+    F('Tipo de Inscrição (Devedor)',20,20,'9(001)',{d:'inscr'}),F('Nº de Inscrição (Devedor)',21,35,'9(015)',{doc:1}),
+    F('Nome (Devedor)',36,75,'X(040)'),F('Tipo de Inscrição (Favorecido)',76,76,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição (Favorecido)',77,91,'9(015)',{doc:1}),F('Nome (Favorecido)',92,131,'X(040)'),
+    F('URL / Chave de Endereçamento',132,210,'X(079)'),F('TXID (Código do QR Code)',211,240,'X(030)')]},
+
+  'O':{title:'Segmento O — Convênios/Tributos com Código de Barras',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Código de Barras',18,61,'X(044)'),F('Nome da Concessionária/Órgão Público',62,91,'X(030)'),
+    F('Data do Vencimento (Nominal)',92,99,'9(008)',{date:1}),F('Data do Pagamento',100,107,'9(008)',{date:1}),
+    F('Valor do Pagamento',108,122,'9(013)V2',{dec:1}),F('Seu Número (Doc. Empresa)',123,142,'X(020)'),
+    F('Nosso Número (Doc. Banco)',143,162,'X(020)'),F('Uso FEBRABAN/CNAB',163,230,'X(068)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'N':{title:'Segmento N — Convênios/Tributos sem Código de Barras',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Seu Número (Doc. Empresa)',18,37,'X(020)'),F('Nosso Número (Doc. Banco)',38,57,'X(020)'),
+    F('Nome do Contribuinte',58,87,'X(030)'),F('Data do Pagamento',88,95,'9(008)',{date:1}),
+    F('Valor Total do Pagamento',96,110,'9(013)V2',{dec:1}),F('Informações Complementares',111,230,'X(120)'),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'N1':{title:'Segmento N — GPS (Previdência Social)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Seu Número (Doc. Empresa)',18,37,'X(020)'),F('Nosso Número (Doc. Banco)',38,57,'X(020)'),
+    F('Nome do Contribuinte',58,87,'X(030)'),F('Data do Pagamento',88,95,'9(008)',{date:1}),
+    F('Valor Total do Pagamento',96,110,'9(013)V2',{dec:1}),F('Código da Receita do Tributo',111,116,'X(006)'),
+    F('Tipo de Identif. do Contribuinte',117,118,'9(002)',{d:'tribContrib'}),F('Identificação do Contribuinte',119,132,'9(014)'),
+    F('Código de Identificação do Tributo',133,134,'X(002)'),F('Competência (MMAAAA)',135,140,'9(006)'),
+    F('Valor Previsto do INSS',141,155,'9(013)V2',{dec:1}),F('Valor de Outras Entidades',156,170,'9(013)V2',{dec:1}),
+    F('Atualização Monetária',171,185,'9(013)V2',{dec:1}),F('Uso FEBRABAN/CNAB',186,230,'X(045)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'N2':{title:'Segmento N — DARF Normal',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Seu Número (Doc. Empresa)',18,37,'X(020)'),F('Nosso Número (Doc. Banco)',38,57,'X(020)'),
+    F('Nome do Contribuinte',58,87,'X(030)'),F('Data do Pagamento',88,95,'9(008)',{date:1}),
+    F('Valor Total do Pagamento',96,110,'9(013)V2',{dec:1}),F('Código da Receita do Tributo',111,116,'X(006)'),
+    F('Tipo de Identif. do Contribuinte',117,118,'9(002)',{d:'tribContrib'}),F('Identificação do Contribuinte',119,132,'9(014)'),
+    F('Código de Identificação do Tributo',133,134,'X(002)'),F('Período de Apuração',135,142,'9(008)',{date:1}),
+    F('Número de Referência',143,159,'9(017)'),F('Valor Principal',160,174,'9(013)V2',{dec:1}),
+    F('Valor da Multa',175,189,'9(013)V2',{dec:1}),F('Valor dos Juros/Encargos',190,204,'9(013)V2',{dec:1}),
+    F('Data de Vencimento',205,212,'9(008)',{date:1}),F('Uso FEBRABAN/CNAB',213,230,'X(018)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'N3':{title:'Segmento N — DARF Simples',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Tipo de Movimento',15,15,'9(001)',{d:'mov'}),F('Código da Instrução p/ Movimento',16,17,'9(002)',{d:'instr'}),
+    F('Seu Número (Doc. Empresa)',18,37,'X(020)'),F('Nosso Número (Doc. Banco)',38,57,'X(020)'),
+    F('Nome do Contribuinte',58,87,'X(030)'),F('Data do Pagamento',88,95,'9(008)',{date:1}),
+    F('Valor Total do Pagamento',96,110,'9(013)V2',{dec:1}),F('Código da Receita do Tributo',111,116,'X(006)'),
+    F('Tipo de Identif. do Contribuinte',117,118,'9(002)',{d:'tribContrib'}),F('Identificação do Contribuinte',119,132,'9(014)'),
+    F('Código de Identificação do Tributo',133,134,'X(002)'),F('Período de Apuração',135,142,'9(008)',{date:1}),
+    F('Valor da Receita Bruta Acumulada',143,157,'9(013)V2',{dec:1}),F('Percentual s/ Receita Bruta',158,164,'9(005)V2'),
+    F('Valor Principal',165,179,'9(013)V2',{dec:1}),F('Valor da Multa',180,194,'9(013)V2',{dec:1}),
+    F('Valor dos Juros/Encargos',195,209,'9(013)V2',{dec:1}),F('Uso FEBRABAN/CNAB',210,230,'X(021)',{filler:1}),
+    F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'W':{title:'Segmento W — Informações Complementares',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Nº Seq. Registro Complementar',15,15,'9(001)'),F('Identifica Uso das Informações 1 e 2',16,16,'X(001)',{d:'tipoInfoW'}),
+    F('Informação Complementar 1',17,96,'X(080)'),F('Informação Complementar 2',97,176,'X(080)'),
+    F('Identificador de Tributo',177,178,'X(002)',{d:'identTrib'}),F('Informação Complementar de Tributo',179,228,'X(050)'),
+    F('Uso FEBRABAN/CNAB',229,230,'X(002)',{filler:1}),F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
+
+  'Z':{title:'Segmento Z — Autenticação do Pagamento (Retorno)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Autenticação (Legislação)',15,78,'X(064)'),F('Autenticação Bancária / Protocolo',79,103,'X(025)'),
+    F('Uso FEBRABAN/CNAB',104,230,'X(127)',{filler:1}),F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]}
+};
+
+// versão de leiaute esperada por forma de lançamento (Sicoob)
+const LOTE_VER_SICOOB={'01':'045','05':'045','41':'045','43':'045','45':'045','47':'045','30':'040','31':'040','11':'012','16':'012','17':'012','18':'012'};
+
+function recordKeySicoob(line,ctx){
+  const forma=(ctx&&ctx.forma)||'';
+  const svc=(ctx&&ctx.svc)||'';
+  const t=line.charAt(7);
+  if(t==='0'||t==='9') return t;
+  if(t==='1'){ const f=slice(line,12,13); return (f==='30'||f==='31') ? '1J' : '1'; }
+  if(t==='5'){ return ['11','16','17','18'].includes(forma) ? '5O' : '5'; }
+  if(t==='3'){
+    const seg=line.charAt(13);
+    if(seg==='A') return 'A';
+    if(seg==='B') return (svc==='30') ? 'BF' : 'B';
+    if(seg==='J'){
+      if(slice(line,18,19)==='52') return (forma==='47') ? 'J52PIX' : 'J52';
+      return 'J';
+    }
+    if(seg==='N'){
+      if(forma==='17') return 'N1';
+      if(forma==='16') return 'N2';
+      if(forma==='18') return 'N3';
+      return 'N';
+    }
+    if(['O','W','Z'].includes(seg)) return seg;
+    return seg||'?';
+  }
+  return '?';
+}
+
+function rulesSicoob(D,iss,h){
+  const {addF,checkDoc}=h;
+  D.forEach((r,i)=>{
+    const L=r.line;
+    if(r.key==='0'){
+      const rr=slice(L,143,143);
+      if(rr!=='1'&&rr!=='2') addF(i,143,143,'error','Código Remessa/Retorno deve ser "1" (remessa) ou "2" (retorno).');
+      if(slice(L,164,166)!=='087') addF(i,164,166,'warn','Versão do layout do arquivo: o Sicoob usa "087" (informado "'+slice(L,164,166)+'").');
+      const ti=slice(L,18,18); if(!DM('inscr',ti)) addF(i,18,18,'error','Tipo de inscrição da empresa inválido.');
+      checkDoc(i,L,18,19,32);
+    }
+    if(r.key==='1'||r.key==='1J'){
+      if(slice(L,9,9)!=='C') addF(i,9,9,'error','Tipo da operação deve ser "C".');
+      const svc=slice(L,10,11),forma=slice(L,12,13);
+      if(svc.trim() && !D_TS(svc)) addF(i,10,11,'warn','Tipo de serviço fora do domínio.');
+      if(!DM('forma',forma)) addF(i,12,13,'error','Forma de lançamento inválida.');
+      const ver=slice(L,14,16),exp=LOTE_VER[forma];
+      if(exp && ver!==exp) addF(i,14,16,'warn','Versão do lote: esperado "'+exp+'" para esta forma de lançamento (informado "'+ver+'").');
+      checkDoc(i,L,18,19,32);
+    }
+    if(r.key==='A'){
+      const cam=slice(L,18,20); if(cam.trim() && !DM('camara',cam)) addF(i,18,20,'warn','Câmara centralizadora fora do domínio (018 TED / 009 PIX).');
+      if((r.forma==='45'||r.forma==='47') && cam.trim() && cam!=='009') addF(i,18,20,'warn','Para PIX a câmara centralizadora deve ser "009" (SPI).');
+      const av=slice(L,230,230); if(av.trim() && !DM('aviso',av)) addF(i,230,230,'warn','Aviso ao favorecido fora do domínio (Nota P006).');
+    }
+    if(r.key==='B'){
+      if(r.forma==='45'){ const ini=slice(L,15,17).trim(); if(ini && !DM('inicpix',ini)) addF(i,15,17,'warn','Forma de iniciação PIX fora do domínio (Nota G100).'); }
+      checkDoc(i,L,18,19,32);
+    }
+    if(r.key==='BF') checkDoc(i,L,18,19,32);
+    if(r.key==='J'){
+      const cm=slice(L,223,224); if(cm.trim() && cm!=='09') addF(i,223,224,'warn','Código de moeda deve ser "09" (Real).');
+    }
+    if(r.key==='J52'||r.key==='J52PIX'){
+      if(slice(L,18,19)!=='52') addF(i,18,19,'warn','Identificação do registro opcional deve ser "52".');
+      const ts=slice(L,20,20); if(ts.trim() && ts!=='0') checkDoc(i,L,20,21,35);
+      if(r.key==='J52PIX' && slice(L,132,210).trim()==='') addF(i,132,210,'error','URL/Chave de endereçamento é obrigatória no J-52 PIX.');
+    }
+    if(['N1','N2','N3'].includes(r.key)){
+      const tc=slice(L,117,118).trim(); if(tc && !DM('tribContrib',tc)) addF(i,117,118,'warn','Tipo de identificação do contribuinte fora do domínio (Nota N003).');
+    }
+  });
+  crossCheckGeneric(D,iss,h);
+}
+
+
 const BANKS = {
   // ---------------- SICREDI (748) — Pagamento a Fornecedor v1.4 (04/2024) ----------------
   '748':{
@@ -2435,6 +2769,31 @@ const BANKS = {
       if(r.key==='J') return [153,167];
       if(r.key==='O') return [108,122];
       if(['N','N1','N2','N3','N4','N8'].includes(r.key)) return [96,110];
+      return null;
+    }
+  },
+
+  // ---------------- SICOOB (756) — Manual de Importação CNAB 240 v2.11 ----------------
+  '756':{
+    nome:'Sicoob', logo:'SC', sub:'Sicoob · Importação CNAB 240 (v2.11)',
+    D:D_SICOOB, LAYOUTS:LAYOUTS_SICOOB, LOTE_VER:LOTE_VER_SICOOB,
+    headerLoteKeys:['1','1J'],
+    trailerLoteKeys:['5','5O'],
+    versionField:[164,166],
+    versionExpected:'087',
+    recordKey: recordKeySicoob,
+    rules: rulesSicoob,
+    // Retorno Sicoob (Nota G059). Efetivado: crédito/débito confirmado; Aceito/Agendado:
+    // inclusão com sucesso; Informativo: pendente de assinatura; demais códigos → Rejeitado.
+    retorno:{ remRetField:[143,143], ocorrField:[231,240], ocorrDict:'ocorr',
+      pago:  new Set(['00']),
+      aceito:new Set(['BD']),
+      info:  new Set(['PD']) },
+    valueField: r => {
+      if(r.key==='A') return [120,134];
+      if(r.key==='J') return [153,167];
+      if(r.key==='O') return [108,122];
+      if(['N','N1','N2','N3'].includes(r.key)) return [96,110];
       return null;
     }
   },
@@ -2516,12 +2875,13 @@ function render(lines){
 
   // 3) atribui a chave de registro propagando a forma de pagamento do lote
   let formaLote='';
+  let svcLote='';
   DATA = padded.map(r=>{
     const t=r.line.charAt(7);
-    if(t==='1'){ formaLote=slice(r.line,12,13); }   // Header de Lote define a forma do lote
-    if(t==='9'){ formaLote=''; }                      // Trailer de arquivo zera contexto
-    const key=recordKey(r.line,{banco:activeBankCode,forma:formaLote});
-    return {...r, key, forma:formaLote, inManual: !!LAYOUTS[key]};
+    if(t==='1'){ formaLote=slice(r.line,12,13); svcLote=slice(r.line,10,11); }   // Header de Lote define forma e serviço do lote
+    if(t==='9'){ formaLote=''; svcLote=''; }                      // Trailer de arquivo zera contexto
+    const key=recordKey(r.line,{banco:activeBankCode,forma:formaLote,svc:svcLote});
+    return {...r, key, forma:formaLote, svc:svcLote, inManual: !!LAYOUTS[key]};
   });
 
   // No modo Retorno não validamos os campos: exibimos apenas o status do banco.
