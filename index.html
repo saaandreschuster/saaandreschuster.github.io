@@ -120,6 +120,39 @@
   .bc-err{background:var(--amber-bg);border:1px solid #e6cf95;color:#7a5a12;padding:10px 12px;border-radius:9px;font-size:13px}
   .bc-note{color:var(--muted);font-size:11.5px;margin-top:2px}
 
+  /* ---- editor de campos ---- */
+  .modal .card.wide{max-width:1080px}
+  .ed-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .ed-search{flex:1;min-width:180px;border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px}
+  .ed-body{max-height:64vh;overflow:auto;padding-right:4px}
+  .ed-rec{border:1px solid var(--line);border-radius:11px;margin-bottom:12px;overflow:hidden}
+  .ed-rec-head{display:flex;align-items:center;gap:9px;padding:10px 13px;background:var(--paper);cursor:pointer;user-select:none}
+  .ed-rec-head .badge{flex:none}
+  .ed-rec-head .t{font-weight:700;font-size:13px}
+  .ed-rec-head .meta{margin-left:auto;color:var(--muted);font-size:11.5px}
+  .ed-rec-head .chev{transition:transform .15s;color:var(--muted)}
+  .ed-rec.collapsed .ed-rec-body{display:none}
+  .ed-rec.collapsed .chev{transform:rotate(-90deg)}
+  .ed-rec-body{padding:12px 13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 14px}
+  .ed-fld{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .ed-fld.filler{opacity:.55}
+  .ed-fld label{font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:baseline;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ed-fld label .pos{font-family:var(--mono,monospace);font-size:10px;color:var(--num)}
+  .ed-fld input{border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#fff;width:100%}
+  .ed-fld input:focus{outline:2px solid var(--green);outline-offset:-1px;border-color:var(--green)}
+  .ed-fld input.num{color:var(--num);background:var(--num-bg)}
+  .ed-fld input.bad{border-color:#c0392b;background:#fbe6e3}
+  .ed-fld .cc{font-size:10px;color:var(--muted);align-self:flex-end;margin-top:-1px}
+  .ed-fld .cc.over{color:#c0392b}
+  .ed-raw{grid-column:1/-1}
+  .ed-raw textarea{width:100%;font-family:ui-monospace,monospace;font-size:12px;border:1px solid var(--line);
+    border-radius:8px;padding:8px;resize:vertical;min-height:44px}
+  .ed-note{color:var(--muted);font-size:12px;margin:0 0 10px}
+  .ed-foot{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+  .ed-foot .spacer{flex:1}
+  .ed-msg{font-size:12.5px;color:var(--green-dk)}
+
   .summary{display:flex;gap:0;flex-wrap:wrap;background:#fff;border:1px solid var(--line);
     border-radius:12px;overflow:hidden;margin-bottom:22px}
   .summary .cell{flex:1;min-width:140px;padding:14px 18px;border-right:1px solid var(--line)}
@@ -300,6 +333,28 @@
   </div>
 </div>
 
+<div class="modal" id="editModal" onclick="if(event.target===this)closeEditor()">
+  <div class="card wide">
+    <div class="m-head"><h2>Editar arquivo CNAB 240</h2><button class="m-close" onclick="closeEditor()" aria-label="Fechar">×</button></div>
+    <div class="m-body">
+      <p class="ed-note">Edite os campos por registro. Campos <b>numéricos 9( )</b> aceitam apenas dígitos e são preenchidos com zeros à esquerda; <b>alfanuméricos X( )</b> são completados com espaços à direita, sempre respeitando o tamanho da posição. Segmentos sem leiaute mostram a linha bruta (240 colunas).</p>
+      <div class="ed-toolbar">
+        <input class="ed-search" id="edSearch" placeholder="Filtrar registros… (ex.: Segmento A, Header, linha 3)" oninput="edFilter()">
+        <button class="b-ghost" onclick="edToggleAll(false)">Expandir tudo</button>
+        <button class="b-ghost" onclick="edToggleAll(true)">Recolher tudo</button>
+      </div>
+      <div class="ed-body" id="edBody"></div>
+      <div class="ed-foot">
+        <button class="b-primary" onclick="applyEdits()">Aplicar e reanalisar</button>
+        <button class="b-ghost" onclick="downloadRem()">Baixar .REM</button>
+        <button class="b-ghost" onclick="closeEditor()">Cancelar</button>
+        <span class="spacer"></span>
+        <span class="ed-msg" id="edMsg"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
   <div class="mode-bar inspect" id="modeBar">
     <span class="mb-ic" id="mbIc">🔎</span>
@@ -313,6 +368,7 @@
       <button class="b-primary" onclick="parseFromTextarea()">Analisar</button>
       <label class="b-ghost" style="text-align:center" for="filepick">Abrir arquivo…</label>
       <input id="filepick" type="file" accept=".rem,.ret,.txt">
+      <button class="b-ghost" onclick="openEditor()">Editar</button>
       <button class="b-ghost" onclick="clearAll()">Limpar</button>
     </div>
   </div>
@@ -441,7 +497,123 @@ const D_ITAU = {
   // Segmento N (Anexo C) — identificação do tributo (pos 18-19)
   tributo:{'01':'GPS','02':'DARF','03':'DARF Simples','05':'GARE-SP ICMS','07':'IPVA','08':'DPVAT','11':'FGTS'},
   // Aviso ao favorecido (Nota 16) — Seg A pos 230
-  aviso:{'0':'Não emite aviso','3':'Aviso no agendamento','5':'Aviso após pagamento','9':'Aviso no agendamento e após pagamento'}
+  aviso:{'0':'Não emite aviso','3':'Aviso no agendamento','5':'Aviso após pagamento','9':'Aviso no agendamento e após pagamento'},
+  // Nota 8 — Ocorrências no arquivo retorno (campo 231-240, até 5 códigos de 2 dígitos)
+  ocorr:{
+    '00':'Pagamento efetuado',
+    'AE':'Data de pagamento alterada',
+    'AG':'Número do lote inválido',
+    'AH':'Número sequencial do registro no lote inválido',
+    'AI':'Produto Demonstrativo de Pagamento não contratado',
+    'AJ':'Tipo de movimento inválido',
+    'AL':'Código do banco favorecido inválido',
+    'AM':'Agência do favorecido inválida',
+    'AN':'Conta corrente do favorecido inválida',
+    'AO':'Nome do favorecido inválido',
+    'AP':'Data de pagamento / validade / hora de lançamento / arrecadação / apuração inválida',
+    'AQ':'Quantidade de registros maior que 999999',
+    'AR':'Valor arrecadado / lançamento inválido',
+    'BC':'Nosso número inválido',
+    'BD':'Pagamento agendado',
+    'BE':'Pagamento agendado com forma alterada para OP',
+    'BI':'CNPJ/CPF do favorecido no segmento J-52 ou B inválido / documento favorecido inválido PIX',
+    'BL':'Valor da parcela inválido',
+    'CD':'CNPJ/CPF informado divergente do cadastrado',
+    'CE':'Pagamento cancelado',
+    'CF':'Valor do documento inválido / valor divergente do QR Code',
+    'CG':'Valor do abatimento inválido',
+    'CH':'Valor do desconto inválido',
+    'CI':'CNPJ/CPF/identificador/inscrição estadual/inscrição no CAD/ICMS inválido',
+    'CJ':'Valor da multa inválido',
+    'CK':'Tipo de inscrição inválida',
+    'CL':'Valor do INSS inválido',
+    'CM':'Valor do COFINS inválido',
+    'CN':'Conta não cadastrada',
+    'CO':'Valor de outras entidades inválido',
+    'CP':'Confirmação de OP cumprida',
+    'CQ':'Soma das faturas difere do pagamento',
+    'CR':'Valor do CSLL inválido',
+    'CS':'Data de vencimento da fatura inválida',
+    'DA':'Número de dependentes salário família inválido',
+    'DB':'Número de horas semanais inválido',
+    'DC':'Salário de contribuição INSS inválido',
+    'DD':'Salário de contribuição FGTS inválido',
+    'DE':'Valor total dos proventos inválido',
+    'DF':'Valor total dos descontos inválido',
+    'DG':'Valor líquido não numérico',
+    'DH':'Valor líquido informado difere do calculado',
+    'DI':'Valor do salário-base inválido',
+    'DJ':'Base de cálculo IRRF inválida',
+    'DK':'Base de cálculo FGTS inválida',
+    'DL':'Forma de pagamento incompatível com holerite',
+    'DM':'E-mail do favorecido inválido',
+    'DV':'DOC/TED devolvido pelo banco favorecido',
+    'D0':'Finalidade do holerite inválida',
+    'D1':'Mês de competência do holerite inválido',
+    'D2':'Dia da competência do holerite inválido',
+    'D3':'Centro de custo inválido',
+    'D4':'Campo numérico da funcional inválido',
+    'D5':'Data início de férias não numérica',
+    'D6':'Data início de férias inconsistente',
+    'D7':'Data fim de férias não numérica',
+    'D8':'Data fim de férias inconsistente',
+    'D9':'Número de dependentes IR inválido',
+    'EM':'Confirmação de OP emitida',
+    'EX':'Devolução de OP não sacada pelo favorecido',
+    'E0':'Tipo de movimento holerite inválido',
+    'E1':'Valor 01 do holerite/informe inválido',
+    'E2':'Valor 02 do holerite/informe inválido',
+    'E3':'Valor 03 do holerite/informe inválido',
+    'E4':'Valor 04 do holerite/informe inválido',
+    'FC':'Pagamento efetuado através de financiamento COMPROR',
+    'FD':'Pagamento efetuado através de financiamento DESCOMPROR',
+    'HA':'Erro no lote',
+    'HM':'Erro no registro header de arquivo',
+    'IB':'Valor do documento inválido',
+    'IC':'Valor do abatimento inválido',
+    'ID':'Valor do desconto inválido',
+    'IE':'Valor da mora inválido',
+    'IF':'Valor da multa inválido',
+    'IG':'Valor da dedução inválido',
+    'IH':'Valor do acréscimo inválido',
+    'II':'Data de vencimento inválida / QR Code expirado',
+    'IJ':'Competência / período referência / parcela inválida',
+    'IK':'Tributo não liquidável via SISPAG ou não conveniado com Itaú',
+    'IL':'Código de pagamento / empresa / receita inválido',
+    'IM':'Tipo x forma não compatível',
+    'IN':'Banco/agência não cadastrados',
+    'IO':'DAC / valor / competência / identificador do lacre / identificação do QR Code inválido',
+    'IP':'DAC do código de barras inválido / erro na validação do QR Code',
+    'IQ':'Dívida ativa ou número de etiqueta inválido',
+    'IR':'Pagamento alterado',
+    'IS':'Concessionária não conveniada com Itaú',
+    'IT':'Valor do tributo inválido',
+    'IU':'Valor da receita bruta acumulada inválido',
+    'IV':'Número do documento origem / referência inválido',
+    'IX':'Código do produto inválido',
+    'LA':'Data de pagamento de um lote alterada',
+    'LC':'Lote de pagamentos cancelado',
+    'NA':'Pagamento cancelado por falta de autorização',
+    'NB':'Identificação do tributo inválida',
+    'NC':'Exercício (ano base) inválido',
+    'ND':'Código RENAVAM não encontrado / inválido',
+    'NE':'UF inválida',
+    'NF':'Código do município inválido',
+    'NG':'Placa inválida',
+    'NH':'Opção/parcela de pagamento inválida',
+    'NI':'Tributo já foi pago ou está vencido',
+    'NR':'Operação não realizada',
+    'PD':'Aquisição confirmada (equivale à ocorrência 02 no layout de Risco Sacado)',
+    'RJ':'Registro rejeitado',
+    'RS':'Pagamento disponível para antecipação no Risco Sacado (pós autorizado)',
+    'SS':'Pagamento cancelado por insuficiência de saldo / limite diário de pagto excedido',
+    'TA':'Lote não aceito - totais do lote com diferença',
+    'TI':'Titularidade inválida',
+    'X1':'Forma incompatível com layout 010',
+    'X2':'Número da nota fiscal inválido',
+    'X3':'Identificador de NF/CNPJ inválido',
+    'X4':'Forma 32 inválida'
+  }
 };
 
 /* ---------- dicionários BANCO DO BRASIL (001) — Particularidades BB nov/2019 ---------- */
@@ -474,7 +646,147 @@ const D_BB = {
   // Identificador de Tributo (Seg. W pos 177-178)
   tributoW:{'01':'FGTS'},
   // 29.3A Aviso ao Fornecedor (Seg. A pos 230)
-  aviso:{'0':'Não emite aviso'}
+  aviso:{'0':'Não emite aviso'},
+  // Código das Ocorrências p/ Retorno (campo 231-240, até 5 códigos de 2 dígitos)
+  // Nota do manual: ocorrências da série "Z" têm caráter informativo para o cliente.
+  ocorr:{
+    '00':'Pagamento confirmado',
+    '01':'Insuficiência de fundos - débito não efetuado',
+    '02':'Crédito ou débito cancelado pelo pagador/credor',
+    '03':'Débito autorizado pela agência - efetuado',
+    'AA':'Controle inválido',
+    'AB':'Tipo de operação inválido',
+    'AC':'Tipo de serviço inválido',
+    'AD':'Forma de lançamento inválida',
+    'AE':'Tipo/número de inscrição inválido',
+    'AF':'Código de convênio inválido',
+    'AG':'Agência/conta corrente/DV inválido',
+    'AH':'Nº sequencial do registro no lote inválido',
+    'AI':'Código de segmento de detalhe inválido',
+    'AJ':'Tipo de movimento inválido',
+    'AK':'Código da câmara de compensação do banco favorecido/depositário inválido',
+    'AL':'Código do banco favorecido ou depositário inválido',
+    'AM':'Agência mantenedora da conta corrente do favorecido inválida',
+    'AN':'Conta corrente/DV do favorecido inválido',
+    'AO':'Nome do favorecido não informado',
+    'AP':'Data lançamento inválido',
+    'AQ':'Tipo/quantidade da moeda inválido',
+    'AR':'Valor do lançamento inválido',
+    'AS':'Aviso ao favorecido - identificação inválida',
+    'AT':'Tipo/número de inscrição do favorecido inválido',
+    'AU':'Logradouro do favorecido não informado',
+    'AV':'Nº do local do favorecido não informado',
+    'AW':'Cidade do favorecido não informada',
+    'AX':'CEP/complemento do favorecido inválido',
+    'AY':'Sigla do estado do favorecido inválida',
+    'AZ':'Código/nome do banco depositário inválido',
+    'BA':'Código/nome da agência depositária não informado',
+    'BB':'Seu número inválido',
+    'BC':'Nosso número inválido',
+    'BD':'Inclusão efetuada com sucesso',
+    'BE':'Alteração efetuada com sucesso',
+    'BF':'Exclusão efetuada com sucesso',
+    'BG':'Agência/conta impedida legalmente',
+    'BH':'Empresa não pagou salário',
+    'BI':'Falecimento do mutuário',
+    'BJ':'Empresa não enviou remessa do mutuário',
+    'BK':'Empresa não enviou remessa no vencimento',
+    'BL':'Valor da parcela inválida',
+    'BM':'Identificação do contrato inválida',
+    'BN':'Operação de consignação incluída com sucesso',
+    'BO':'Operação de consignação alterada com sucesso',
+    'BP':'Operação de consignação excluída com sucesso',
+    'BQ':'Operação de consignação liquidada com sucesso',
+    'BR':'Reativação efetuada com sucesso',
+    'BS':'Suspensão efetuada com sucesso',
+    'CA':'Código de barras - código do banco inválido',
+    'CB':'Código de barras - código da moeda inválido',
+    'CC':'Código de barras - dígito verificador geral inválido',
+    'CD':'Código de barras - valor do título inválido',
+    'CE':'Código de barras - campo livre inválido',
+    'CF':'Valor do documento inválido',
+    'CG':'Valor do abatimento inválido',
+    'CH':'Valor do desconto inválido',
+    'CI':'Valor de mora inválido',
+    'CJ':'Valor da multa inválido',
+    'CK':'Valor do IR inválido',
+    'CL':'Valor do ISS inválido',
+    'CM':'Valor do IOF inválido',
+    'CN':'Valor de outras deduções inválido',
+    'CO':'Valor de outros acréscimos inválido',
+    'CP':'Valor do INSS inválido',
+    'HA':'Lote não aceito',
+    'HB':'Inscrição da empresa inválida para o contrato',
+    'HC':'Convênio com a empresa inexistente/inválido para o contrato',
+    'HD':'Agência/conta corrente da empresa inexistente/inválido para o contrato',
+    'HE':'Tipo de serviço inválido para o contrato',
+    'HF':'Conta corrente da empresa com saldo insuficiente',
+    'HG':'Lote de serviço fora de sequência',
+    'HH':'Lote de serviço inválido',
+    'HI':'Arquivo não aceito',
+    'HJ':'Tipo de registro inválido',
+    'HK':'Código remessa/retorno inválido',
+    'HL':'Versão de layout inválida',
+    'HM':'Mutuário não identificado',
+    'HN':'Tipo do benefício não permite empréstimo',
+    'HO':'Benefício cessado/suspenso',
+    'HP':'Benefício possui representante legal',
+    'HQ':'Benefício é do tipo PA (pensão alimentícia)',
+    'HR':'Quantidade de contratos permitida excedida',
+    'HS':'Benefício não pertence ao banco informado',
+    'HT':'Início do desconto informado já ultrapassado',
+    'HU':'Número da parcela inválida',
+    'HV':'Quantidade de parcela inválida',
+    'HW':'Margem consignável excedida para o mutuário dentro do prazo do contrato',
+    'HX':'Empréstimo já cadastrado',
+    'HY':'Empréstimo inexistente',
+    'HZ':'Empréstimo já encerrado',
+    'H1':'Arquivo sem trailer',
+    'H2':'Mutuário sem crédito na competência',
+    'H3':'Não descontado – outros motivos',
+    'H4':'Retorno de crédito não pago',
+    'H5':'Cancelamento de empréstimo retroativo',
+    'H6':'Outros motivos de glosa',
+    'H7':'Margem consignável excedida para o mutuário acima do prazo do contrato',
+    'H8':'Mutuário desligado do empregador',
+    'H9':'Mutuário afastado por licença',
+    'IA':'Primeiro nome do mutuário diferente do movimento do censo ou da base de titular do benefício',
+    'IB':'Benefício suspenso/cessado pela APS ou Sisobi',
+    'IC':'Benefício suspenso por dependência de cálculo',
+    'ID':'Benefício suspenso/cessado pela inspetoria/auditoria',
+    'IE':'Benefício bloqueado para empréstimo pelo beneficiário',
+    'IF':'Benefício bloqueado para empréstimo por TBM',
+    'IG':'Benefício está em fase de concessão de PA ou desdobramento',
+    'IH':'Benefício cessado por óbito',
+    'II':'Benefício cessado por fraude',
+    'IJ':'Benefício cessado por concessão de outro benefício',
+    'IK':'Benefício cessado: estatutário transferido para órgão de origem',
+    'IL':'Empréstimo suspenso pela APS',
+    'IM':'Empréstimo cancelado pelo banco',
+    'IN':'Crédito transformado em PAB',
+    'IO':'Término da consignação foi alterado',
+    'IP':'Fim do empréstimo ocorreu durante período de suspensão ou concessão',
+    'IQ':'Empréstimo suspenso pelo banco',
+    'IR':'Não averbação de contrato – parcelas/competências ultrapassaram a data limite da extinção de cota',
+    'TA':'Lote não aceito - totais do lote com diferença',
+    'YA':'Título não encontrado',
+    'YB':'Identificador registro opcional inválido',
+    'YC':'Código padrão inválido',
+    'YD':'Código de ocorrência inválido',
+    'YE':'Complemento de ocorrência inválido',
+    'YF':'Alegação já informada',
+    'ZA':'Agência/conta do favorecido substituída (informativo)',
+    'ZB':'Divergência entre primeiro/último nome do beneficiário versus Receita Federal (informativo)',
+    'ZC':'Confirmação de antecipação de valor (informativo)',
+    'ZD':'Antecipação parcial de valor (informativo)',
+    'ZE':'Título bloqueado na base (informativo)',
+    'ZF':'Sistema em contingência – título valor maior que referência (informativo)',
+    'ZG':'Sistema em contingência – título vencido (informativo)',
+    'ZH':'Sistema em contingência – título indexado (informativo)',
+    'ZI':'Beneficiário divergente (informativo)',
+    'ZJ':'Limite de pagamentos parciais excedido (informativo)',
+    'ZK':'Boleto já liquidado (informativo)'
+  }
 };
 
 /* ---------- ponteiro para o dicionário do banco ativo ---------- */
@@ -1111,7 +1423,7 @@ function recordKeyFebraban(line){
   if(t==='3'){
     const seg = line.charAt(13);
     if(seg==='J') return slice(line,18,19)==='52' ? 'J52' : 'J';
-    if(['A','B','C','D','E','F','O','N','W','Z'].includes(seg)) return seg;
+    if(['A','B','C','D','E','F','O','N','W','Z','P','Q','R','S','T','U','Y'].includes(seg)) return seg;
     return seg||'?';
   }
   return '?';
@@ -1651,6 +1963,98 @@ let LAYOUTS_FALLBACK = {
     F('Autenticação (Legislação)',15,78,'X(064)'),F('Autenticação Bancária / Protocolo',79,103,'X(025)'),
     F('Uso CNAB/FEBRABAN',104,230,'X(127)',{filler:1}),F('Ocorrências p/ Retorno',231,240,'X(010)',{filler:1})]},
 
+  // ===== Cobrança (Layout Padrão FEBRABAN CNAB240 · capítulo Cobrança) =====
+  'P':{title:'Segmento P — Cobrança (Título · Remessa)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Remessa',16,17,'9(002)'),
+    F('Agência Mantenedora da Conta',18,22,'9(005)'),F('DV Agência',23,23,'X(001)'),F('Conta Corrente',24,35,'9(012)'),
+    F('DV Conta',36,36,'X(001)'),F('DV Agência/Conta',37,37,'X(001)'),F('Nosso Número (Ident. do Título no Banco)',38,57,'X(020)'),
+    F('Código da Carteira',58,58,'9(001)'),F('Forma de Cadastramento do Título',59,59,'9(001)'),F('Tipo de Documento',60,60,'9(001)'),
+    F('Identificação da Emissão do Bloqueto',61,61,'9(001)'),F('Identificação da Distribuição',62,62,'X(001)'),
+    F('Número do Documento de Cobrança',63,77,'X(015)'),F('Data de Vencimento do Título',78,85,'9(008)',{date:1}),
+    F('Valor Nominal do Título',86,100,'9(013)V2',{dec:1}),F('Agência Cobradora/Recebedora',101,105,'9(005)'),
+    F('DV Agência Cobradora',106,106,'X(001)'),F('Espécie do Título',107,108,'9(002)'),
+    F('Identif. de Título Aceito/Não Aceito',109,109,'X(001)'),F('Data da Emissão do Título',110,117,'9(008)',{date:1}),
+    F('Código do Juros de Mora',118,118,'9(001)'),F('Data do Juros de Mora',119,126,'9(008)',{date:1}),
+    F('Valor do Juros de Mora/Dia/Taxa',127,141,'9(013)V2',{dec:1}),F('Código do Desconto 1',142,142,'9(001)'),
+    F('Data do Desconto 1',143,150,'9(008)',{date:1}),F('Valor/Percentual do Desconto 1',151,165,'9(013)V2',{dec:1}),
+    F('Valor do IOF a ser Recolhido',166,180,'9(013)V2',{dec:1}),F('Valor do Abatimento',181,195,'9(013)V2',{dec:1}),
+    F('Identificação do Título na Empresa',196,220,'X(025)'),F('Código para Protesto',221,221,'9(001)'),
+    F('Nº de Dias para Protesto',222,223,'9(002)'),F('Código para Baixa/Devolução',224,224,'9(001)'),
+    F('Nº de Dias para Baixa/Devolução',225,227,'9(003)'),F('Código da Moeda',228,229,'9(002)'),
+    F('Nº do Contrato da Operação de Crédito',230,239,'9(010)'),F('Uso Exclusivo FEBRABAN/CNAB',240,240,'X(001)',{filler:1})]},
+
+  'Q':{title:'Segmento Q — Cobrança (Pagador · Remessa)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Remessa',16,17,'9(002)'),
+    F('Tipo de Inscrição do Pagador',18,18,'9(001)',{d:'inscr'}),F('Nº de Inscrição do Pagador',19,33,'9(015)',{doc:1}),
+    F('Nome do Pagador',34,73,'X(040)'),F('Endereço do Pagador',74,113,'X(040)'),F('Bairro',114,128,'X(015)'),
+    F('CEP',129,133,'9(005)'),F('Sufixo do CEP',134,136,'9(003)'),F('Cidade',137,151,'X(015)'),
+    F('Unidade da Federação',152,153,'X(002)'),F('Tipo de Inscrição — Sacador/Avalista',154,154,'9(001)',{d:'inscrz'}),
+    F('Nº de Inscrição — Sacador/Avalista',155,169,'9(015)',{doc:1}),F('Nome do Sacador/Avalista',170,209,'X(040)'),
+    F('Cód. Banco Correspondente na Compensação',210,212,'9(003)'),F('Nosso Nº no Banco Correspondente',213,232,'X(020)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',233,240,'X(008)',{filler:1})]},
+
+  'R':{title:'Segmento R — Cobrança (Desc./Multa/Débito Aut. · Remessa)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Remessa',16,17,'9(002)'),
+    F('Código do Desconto 2',18,18,'9(001)'),F('Data do Desconto 2',19,26,'9(008)',{date:1}),
+    F('Valor/Percentual do Desconto 2',27,41,'9(013)V2',{dec:1}),F('Código do Desconto 3',42,42,'9(001)'),
+    F('Data do Desconto 3',43,50,'9(008)',{date:1}),F('Valor/Percentual do Desconto 3',51,65,'9(013)V2',{dec:1}),
+    F('Código da Multa',66,66,'9(001)'),F('Data da Multa',67,74,'9(008)',{date:1}),
+    F('Valor/Percentual da Multa',75,89,'9(013)V2',{dec:1}),F('Informação ao Pagador',90,99,'X(010)'),
+    F('Mensagem 3',100,139,'X(040)'),F('Mensagem 4',140,179,'X(040)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',180,199,'X(020)',{filler:1}),F('Código de Ocorrência do Pagador',200,207,'9(008)'),
+    F('Cód. Banco na Conta do Débito',208,210,'9(003)'),F('Código da Agência do Débito',211,215,'9(005)'),
+    F('DV Agência',216,216,'X(001)'),F('Conta Corrente para Débito',217,228,'9(012)'),F('DV Conta',229,229,'X(001)'),
+    F('DV Agência/Conta',230,230,'X(001)'),F('Aviso para Débito Automático',231,231,'9(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',232,240,'X(009)',{filler:1})]},
+
+  'S':{title:'Segmento S — Cobrança (Mensagens/Impressão · Remessa)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Remessa',16,17,'9(002)'),
+    F('Identificação da Impressão',18,18,'9(001)'),
+    F('Mensagens / Linhas de Impressão (variável conforme Identificação)',19,240,'X(222)')]},
+
+  'T':{title:'Segmento T — Cobrança (Título · Retorno)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Retorno',16,17,'9(002)'),
+    F('Agência Mantenedora da Conta',18,22,'9(005)'),F('DV Agência',23,23,'X(001)'),F('Conta Corrente',24,35,'9(012)'),
+    F('DV Conta',36,36,'X(001)'),F('DV Agência/Conta',37,37,'X(001)'),F('Nosso Número (Ident. do Título no Banco)',38,57,'X(020)'),
+    F('Código da Carteira',58,58,'9(001)'),F('Número do Documento de Cobrança',59,73,'X(015)'),
+    F('Data de Vencimento do Título',74,81,'9(008)',{date:1}),F('Valor Nominal do Título',82,96,'9(013)V2',{dec:1}),
+    F('Banco Cobrador/Recebedor',97,99,'9(003)'),F('Agência Cobradora/Recebedora',100,104,'9(005)'),
+    F('DV Agência Cobradora',105,105,'X(001)'),F('Identificação do Título na Empresa',106,130,'X(025)'),
+    F('Código da Moeda',131,131,'9(001)'),F('Tipo de Inscrição do Pagador',132,132,'9(001)',{d:'inscr'}),
+    F('Nº de Inscrição do Pagador',133,147,'9(015)',{doc:1}),F('Nome do Pagador',148,187,'X(040)'),
+    F('Nº do Contrato da Operação de Crédito',188,197,'9(010)'),F('Valor da Tarifa/Custas',198,212,'9(013)V2',{dec:1}),
+    F('Motivos da Ocorrência (Rejeições/Tarifas)',213,222,'X(010)'),F('Uso Exclusivo FEBRABAN/CNAB',223,240,'X(018)',{filler:1})]},
+
+  'U':{title:'Segmento U — Cobrança (Valores · Retorno)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento Retorno',16,17,'9(002)'),
+    F('Juros/Multa/Encargos',18,32,'9(013)V2',{dec:1}),F('Valor do Desconto Concedido',33,47,'9(013)V2',{dec:1}),
+    F('Valor do Abatimento Concedido',48,62,'9(013)V2',{dec:1}),F('Valor do IOF Recolhido',63,77,'9(013)V2',{dec:1}),
+    F('Valor Pago pelo Sacado/Pagador',78,92,'9(013)V2',{dec:1}),F('Valor Líquido a ser Creditado',93,107,'9(013)V2',{dec:1}),
+    F('Valor de Outras Despesas',108,122,'9(013)V2',{dec:1}),F('Valor de Outros Créditos',123,137,'9(013)V2',{dec:1}),
+    F('Data da Ocorrência',138,145,'9(008)',{date:1}),F('Data da Efetivação do Crédito',146,153,'9(008)',{date:1}),
+    F('Código da Ocorrência do Pagador',154,162,'X(009)'),F('Data da Ocorrência do Pagador',163,170,'9(008)',{date:1}),
+    F('Valor da Ocorrência do Pagador',171,185,'9(013)V2',{dec:1}),F('Complemento da Ocorrência do Pagador',186,215,'X(030)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',216,240,'X(025)',{filler:1})]},
+
+  'Y':{title:'Segmento Y — Cobrança (Registro Opcional · variável)',badge:'',fields:[
+    F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)',{filler:1}),F('Tipo de Registro',8,8,'9(001)'),
+    F('Nº Seq. do Registro no Lote',9,13,'9(005)'),F('Código do Segmento',14,14,'X(001)'),
+    F('Uso Exclusivo FEBRABAN/CNAB',15,15,'X(001)',{filler:1}),F('Código de Movimento',16,17,'9(002)'),
+    F('Identificação do Registro Opcional',18,19,'9(002)'),
+    F('Conteúdo (variável: Y-01 pagador · Y-03 boleto híbrido/PIX · Y-04 cheques · Y-05 débito aut. · Y-50/Y-53 histórico/sacador)',20,240,'X(221)')]},
+
   '5':{title:'Trailer de Lote',badge:'t5',fields:[
     F('Código do Banco',1,3,'9(003)'),F('Lote de Serviço',4,7,'9(004)'),F('Tipo de Registro',8,8,'9(001)'),
     F('Uso Exclusivo FEBRABAN/CNAB',9,17,'X(009)',{filler:1}),F('Quantidade de Registros do Lote',18,23,'9(006)'),
@@ -1674,13 +2078,17 @@ let IS_RETORNO = false;   // definido em render() a partir do modo/arquivo
 let VIEW = 'inspect';     // modo escolhido no menu: 'inspect' (remessa) | 'retorno'
 
 // classifica um código de ocorrência em: pago | aceito | info | rejeitado
+// Sets globais = padrão Sicredi. Um banco pode declarar seus próprios Sets em bank.retorno.
 const OCORR_PAGO=new Set(['00','03']);
 const OCORR_ACEITO=new Set(['BD','BE','BF','BN','BO','BP','BQ']);
 const OCORR_INFO=new Set(['ZA','ZB','ZC','ZD']);
-function ocorrStatus(code){
-  if(OCORR_PAGO.has(code)) return 'pago';
-  if(OCORR_ACEITO.has(code)) return 'aceito';
-  if(OCORR_INFO.has(code)) return 'info';
+function ocorrStatus(code,cfg){
+  const pago  =(cfg&&cfg.pago)  ||OCORR_PAGO;
+  const aceito=(cfg&&cfg.aceito)||OCORR_ACEITO;
+  const info  =(cfg&&cfg.info)  ||OCORR_INFO;
+  if(pago.has(code)) return 'pago';
+  if(aceito.has(code)) return 'aceito';
+  if(info.has(code)) return 'info';
   return 'rejeitado';
 }
 const OCORR_ROTULO={pago:'Efetivado',aceito:'Aceito/Agendado',info:'Informativo',rejeitado:'Rejeitado'};
@@ -1700,7 +2108,7 @@ function ocorrenciasDe(r){
   if(!codes.length) return null;
   const cfg=retornoCfg();
   const dict = cfg ? D[cfg.ocorrDict] : null;
-  return codes.map(c=>({code:c, desc:(dict&&dict[c])||'código não catalogado', status:ocorrStatus(c)}));
+  return codes.map(c=>({code:c, desc:(dict&&dict[c])||'código não catalogado', status:ocorrStatus(c,cfg)}));
 }
 // status "principal" do registro = o do 1º código
 function statusPrincipal(r){ const o=ocorrenciasDe(r); return o&&o.length?o[0].status:null; }
@@ -1991,6 +2399,12 @@ const BANKS = {
     versionExpected:'080',
     recordKey: recordKeyItau,
     rules: rulesItau,
+    // Retorno SISPAG (Nota 8). Efetivado: pago/confirmado; Aceito: agendado/OP emitida;
+    // Informativo: alterações e status de risco sacado; demais códigos → Rejeitado.
+    retorno:{ remRetField:[143,143], ocorrField:[231,240], ocorrDict:'ocorr',
+      pago:  new Set(['00','FC','FD','CP','PD']),
+      aceito:new Set(['BD','BE','EM']),
+      info:  new Set(['AE','IR','LA','RS','EX']) },
     valueField: r => {
       if(r.key==='A'||r.key==='ANF') return [120,134];
       if(r.key==='J') return [153,167];
@@ -2008,6 +2422,12 @@ const BANKS = {
     versionExpected:'',         // sem versão obrigatória → exibe sem gerar aviso
     recordKey: recordKeyBB,
     rules: rulesBB,
+    // Retorno BB (Particularidades). Efetivado: pagamento confirmado; Aceito: operações "com
+    // Sucesso"; Informativo: série "Z" (conforme nota do manual); demais códigos → Rejeitado.
+    retorno:{ remRetField:[143,143], ocorrField:[231,240], ocorrDict:'ocorr',
+      pago:  new Set(['00','03']),
+      aceito:new Set(['BD','BE','BF','BN','BO','BP','BQ','BR','BS']),
+      info:  new Set(['ZA','ZB','ZC','ZD','ZE','ZF','ZG','ZH','ZI','ZJ','ZK']) },
     valueField: r => {
       if(r.key==='A') return [120,134];
       if(r.key==='J') return [153,167];
@@ -2820,6 +3240,125 @@ function setGenericValidation(v){
 function openBarcodeTool(){closeDrawer();document.getElementById('bcModal').classList.add('open');setTimeout(()=>{const i=document.getElementById('bcInput');if(i)i.focus();},60);}
 function closeBarcodeTool(){document.getElementById('bcModal').classList.remove('open');}
 function bcClear(){document.getElementById('bcInput').value='';document.getElementById('bcRes').innerHTML='';document.getElementById('bcType').textContent='';}
+
+/* ---------- Editor de campos ---------- */
+function escA(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function edRecTitle(r){
+  const bankLay=LAYOUTS[r.key];
+  if(bankLay) return bankLay.title;
+  const ref=refLayout(r.key);
+  return ref ? ref.title+' — ref. FEBRABAN' : 'Segmento fora do manual ('+r.key+')';
+}
+function buildEditor(){
+  const body=document.getElementById('edBody');
+  document.getElementById('edMsg').textContent='';
+  const search=document.getElementById('edSearch'); if(search) search.value='';
+  if(!DATA.length){ body.innerHTML='<p class="ed-note">Nenhum arquivo carregado. Analise um arquivo .REM antes de editar.</p>'; return; }
+  const many=DATA.length>25;
+  body.innerHTML=DATA.map(r=>{
+    const lay=LAYOUTS[r.key]||refLayout(r.key);
+    const badge=recBadge(r.key);
+    const title=edRecTitle(r);
+    const searchTxt=(title+' '+badge+' segmento '+r.key+' linha '+(r.idx+1)).toLowerCase();
+    let inner;
+    if(lay){
+      inner=lay.fields.map(f=>{
+        const raw=slice(r.line,f.de,f.ate);
+        const isNum=f.f.startsWith('9');
+        const w=f.ate-f.de+1;
+        const disp=raw.replace(/^\s+|\s+$/g,'');
+        return `<div class="ed-fld ${f.filler?'filler':''}">
+          <label title="${escA(f.name)}"><span style="overflow:hidden;text-overflow:ellipsis">${esc(f.name)}</span><span class="pos">${String(f.de).padStart(3,'0')}–${String(f.ate).padStart(3,'0')}</span></label>
+          <input class="${isNum?'num':''}" value="${escA(disp)}" maxlength="${w}" data-de="${f.de}" data-ate="${f.ate}" data-orig="${escA(raw)}"${isNum?' inputmode="numeric"':''} oninput="edOnInput(this)">
+          <span class="cc">${disp.length}/${w}</span>
+        </div>`;
+      }).join('');
+    } else {
+      inner=`<div class="ed-raw"><textarea class="ed-rawline" spellcheck="false" maxlength="240">${esc(r.line)}</textarea>
+        <span class="cc">240 colunas — segmento sem leiaute; edite a linha diretamente</span></div>`;
+    }
+    return `<div class="ed-rec${many?' collapsed':''}" data-idx="${r.idx}" data-search="${escA(searchTxt)}">
+      <div class="ed-rec-head" onclick="edToggleRec(this)">
+        <span class="badge ${lay?lay.badge:''}">${badge}</span>
+        <span class="t">${esc(title)}</span>
+        <span class="meta">linha ${r.idx+1} · ${r.len} bytes</span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="ed-rec-body">${inner}</div>
+    </div>`;
+  }).join('');
+}
+function edOnInput(inp){
+  if(inp.classList.contains('num')){
+    const p=inp.selectionStart, before=inp.value;
+    const clean=inp.value.replace(/\D/g,'');
+    if(clean!==before){ inp.value=clean; try{inp.setSelectionRange(p-1,p-1);}catch(e){} }
+  }
+  const w=(+inp.dataset.ate)-(+inp.dataset.de)+1;
+  const cc=inp.parentElement.querySelector('.cc');
+  if(cc){ cc.textContent=inp.value.length+'/'+w; cc.classList.toggle('over',inp.value.length>w); }
+}
+function edToggleRec(head){ head.parentElement.classList.toggle('collapsed'); }
+function edToggleAll(collapse){ document.querySelectorAll('#edBody .ed-rec').forEach(el=>el.classList.toggle('collapsed',collapse)); }
+function edFilter(){
+  const t=document.getElementById('edSearch').value.toLowerCase().trim();
+  document.querySelectorAll('#edBody .ed-rec').forEach(el=>{
+    const hit=!t || (el.dataset.search||'').includes(t);
+    el.style.display=hit?'':'none';
+    if(hit && t) el.classList.remove('collapsed');
+  });
+}
+/* monta as linhas de 240 a partir dos inputs do editor (mantém bytes originais nos campos inalterados) */
+function assembleEditedLines(){
+  const lines=DATA.map(r=>(r.line+' '.repeat(240)).slice(0,240));
+  document.querySelectorAll('#edBody .ed-rec').forEach(sec=>{
+    const idx=+sec.dataset.idx;
+    const rawEl=sec.querySelector('.ed-rawline');
+    if(rawEl){ lines[idx]=(rawEl.value.replace(/[\r\n]/g,'')+' '.repeat(240)).slice(0,240); return; }
+    const arr=lines[idx].split('');
+    sec.querySelectorAll('input[data-de]').forEach(inp=>{
+      const de=+inp.dataset.de, ate=+inp.dataset.ate, w=ate-de+1;
+      const orig=inp.dataset.orig!=null?inp.dataset.orig:'';
+      const disp=orig.replace(/^\s+|\s+$/g,'');
+      let out;
+      if(inp.value===disp){ out=orig; }              // inalterado: preserva bytes exatos
+      else if(inp.classList.contains('num')){ out=inp.value.replace(/\D/g,'').padStart(w,'0').slice(0,w); }
+      else { out=inp.value.padEnd(w,' ').slice(0,w); }
+      for(let k=0;k<w;k++) arr[de-1+k]=(out[k]!==undefined?out[k]:' ');
+    });
+    lines[idx]=arr.join('');
+  });
+  return lines;
+}
+function openEditor(){
+  closeDrawer&&closeDrawer();
+  if(!DATA.length){ showErr('Analise um arquivo .REM antes de editar.'); return; }
+  buildEditor();
+  document.getElementById('editModal').classList.add('open');
+}
+function closeEditor(){ document.getElementById('editModal').classList.remove('open'); }
+function applyEdits(){
+  if(!DATA.length){ closeEditor(); return; }
+  const lines=assembleEditedLines();
+  const txt=lines.join('\n');
+  document.getElementById('input').value=txt;
+  document.getElementById('fileLabel').innerHTML='arquivo: <b>editado manualmente</b>';
+  CURRENT_FILE=(CURRENT_FILE&&CURRENT_FILE!=='arquivo'?CURRENT_FILE.replace(/\.(rem|ret|txt)$/i,''):'arquivo')+'-editado';
+  USE_GENERIC_VALIDATION=false;
+  clearErr();
+  render(lines);
+  closeEditor();
+  document.getElementById('summary').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function downloadRem(){
+  if(!DATA.length) return;
+  const lines=assembleEditedLines();
+  const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/plain'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  const base=(CURRENT_FILE||'arquivo').replace(/\.[^.]+$/,'');
+  a.href=url; a.download=base+'.REM'; a.click(); URL.revokeObjectURL(url);
+  document.getElementById('edMsg').textContent='Arquivo .REM gerado (não aplicado à tela — use “Aplicar” para reanalisar).';
+}
 function runBarcode(){
   const out=bcAnalisa(document.getElementById('bcInput').value);
   const typeEl=document.getElementById('bcType'), resEl=document.getElementById('bcRes');
@@ -2832,7 +3371,7 @@ function runBarcode(){
 }
 // Enter (Ctrl/Cmd) dispara a análise; Esc fecha
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ closeBarcodeTool(); closeDrawer(); }
+  if(e.key==='Escape'){ closeBarcodeTool(); closeEditor(); closeDrawer(); }
   if((e.ctrlKey||e.metaKey)&&e.key==='Enter'&&document.getElementById('bcModal').classList.contains('open')) runBarcode();
 });
 
