@@ -11,11 +11,13 @@ Ferramenta web para **inspecionar, validar e editar** arquivos CNAB 240 (remessa
   - Sicredi (748) — Pagamento a Fornecedor
   - Itaú (341) — SISPAG
   - Banco do Brasil (001)
+  - Sicoob (756) — Importação CNAB 240 v2.11
 - **Modo genérico FEBRABAN** para bancos sem plugin dedicado: exibe os campos pelo leiaute padrão (pagamentos e cobrança — segmentos P, Q, R, S, T, U, Y) sem aplicar regras específicas, com opção de validar pelo FEBRABAN.
 - **Segmentos "fora do manual"** são sinalizados e exibidos pelo leiaute genérico, sem validação específica.
 - **Inspeção de remessa** com validação campo a campo (tamanho de 240 bytes, numérico/data/código de barras, regras do banco) e destaque dos erros.
 - **Inspeção de retorno** com decodificação das ocorrências e status por registro (Efetivado / Aceito-Agendado / Informativo / Rejeitado) para os três bancos, com resumo por classe e valor confirmado.
 - **Editor de campos:** botão **Editar** abre uma tela com todos os registros e seus campos editáveis (respeitando tamanho e tipo de cada posição), com busca, aplicação com reanálise e download do `.REM` editado.
+- **Diretório de bancos:** menu → **Bancos** abre uma janela com o nome, o **código de compensação (Compe)** e o **ISPB** das instituições, com ícone e busca por nome/código/ISPB. Os bancos com validação nativa vêm sinalizados.
 - **Ferramenta de código de barras:** decodifica código de barras (44 díg.) e linha digitável de boleto (47) e de convênio/arrecadação (48), com round-trip barras ↔ linha.
 - **Exportação de relatório em PDF** (offline, sem bibliotecas).
 - Arrastar-e-soltar arquivo, colar conteúdo e leitura via seletor de arquivo.
@@ -38,6 +40,10 @@ O projeto é totalmente estático. Para publicar:
 3. A página fica disponível em `https://<usuario>.github.io/<repositorio>/`.
 
 O GitHub Pages serve via HTTPS, necessário para o funcionamento pleno da leitura de arquivos e do download do `.REM`.
+
+### Arquivo opcional `bancos-catalogo.js`
+
+O `index.html` já traz embutido o diretório de bancos e os ícones essenciais, então funciona sozinho. Opcionalmente, o arquivo `bancos-catalogo.js` pode ser colocado ao lado do `index.html`: ele expõe `window.BANCOS_CATALOGO` com o registro completo e **todos os ícones** (por código de compensação e por identificador), disponíveis para uso futuro. Se o arquivo não estiver presente, o aplicativo continua funcionando normalmente.
 
 ## Aviso
 

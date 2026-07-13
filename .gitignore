@@ -1,0 +1,13 @@
+# Arquivo Figma de origem (não versionar)
+*.fig
+
+# Materiais de origem pesados (opcional) — descomente se NÃO quiser versionar os SVGs individuais.
+# Os ícones essenciais já estão embutidos no index.html e no bancos-catalogo.js,
+# então a pasta abaixo é apenas material de origem/histórico.
+# assets/logos-bancos-svg/
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
